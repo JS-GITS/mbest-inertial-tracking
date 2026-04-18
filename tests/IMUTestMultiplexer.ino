@@ -19,8 +19,18 @@ float dt = 0.01;  // Time interval in seconds (10 ms)
 // add biessies
 float gx_bias1 = 0, gy_bias1 = 0, gz_bias1 = 0;
 float gx_bias2 = 0, gy_bias2 = 0, gz_bias2 = 0;
+float ax_bias1 = 0, ay_bias1 = 0, az_bias1 = 0;
+float ax_bias2 = 0, ay_bias2 = 0, az_bias2 = 0;
 float vx = 0, vy = 0, vz = 0;
 float px = 0, py = 0, pz = 0;
+
+// Initialize the values to discern values that have no movement
+float sf =1.5;
+float ax_max1 = 0, ay_max1 = 0, az_max1 = 0;
+float ax_max2 = 0, ay_max2 = 0, az_max2 = 0;
+float ax_maxrange = 0, ay_maxrange = 0, az_maxrange = 0;
+float* maxAccel1[] = {&ax_max1, &ay_max1, &az_max1};
+float* maxAccel2[] = {&ax_max2, &ay_max2, &az_max2};
 
 // Multiplexer code
 void tcaSelect(uint8_t i) {
@@ -47,34 +57,84 @@ void setup() {
 
 
   // --- CALIBRATE IMU 1 ---
-  for (int i = 0; i < 1000; i++) {
+  for (int i = 0; i < 100; i++) {
     int16_t d[6];
     tcaSelect(0);
     imu1.getAccelGyroData(d);
+    // Record the max and minimum range of the accel data
+    for (int j = 0; j < 2; j++) {
+      if (abs(d[j + 3]) > *maxAccel1[j]) {
+        *maxAccel1[j] = abs(d[j + 3]);
+      }
+    }
+    float az_dev = abs(d[5] - 16384.0);
+    if (az_dev > az_max1) az_max1 = az_dev;
 
+    // Add on the biases for the gyro and accel data
     gx_bias1 += d[0];
     gy_bias1 += d[1];
     gz_bias1 += d[2];
+    ax_bias1 += d[3];
+    ay_bias1 += d[4];
+    az_bias1 += d[5];
     delay(5);
   }
-  gx_bias1 /= 1000;
-  gy_bias1 /= 1000;
-  gz_bias1 /= 1000;
+  // Adjust the acceleration bias in z-axis
+  az_bias1 = abs(az_bias1 - 16384.0);
+
+  gx_bias1 /= 100;
+  gy_bias1 /= 100;
+  gz_bias1 /= 100;
+  ax_bias1 /= 100;
+  ay_bias1 /= 100;
+  az_bias1 /= 100;
+
+  // Adjust the bias from the acceleration in the z-axis
+  az_bias1 = abs(az_bias1 - 16384.0);
   Serial.println("Test");
   // --- CALIBRATE IMU 2 ---
-  for (int i = 0; i < 1000; i++) {
+  for (int i = 0; i < 100; i++) {
     int16_t d[6];
     tcaSelect(1);
     imu2.getAccelGyroData(d);
+    for (int j = 0; j < 2; j++) {
+      if (abs(d[j + 3]) > *maxAccel2[j]) {
+        *maxAccel2[j] = abs(d[j + 3]);
+      }
+    }
+    float az_dev = abs(d[5] - 16384.0);
+    if (az_dev > az_max2) az_max2 = az_dev;
 
     gx_bias2 += d[0];
     gy_bias2 += d[1];
     gz_bias2 += d[2];
+    ax_bias2 += d[3];
+    ay_bias2 += d[4];
+    az_bias2 += d[5];
     delay(5);
   }
-  gx_bias2 /= 1000;
-  gy_bias2 /= 1000;
-  gz_bias2 /= 1000;
+
+  // Adjust the acceleration bias in z-axis
+  az_bias2 = abs(az_bias2 - 16384.0);
+
+  // Find the max range
+  float* maxRange[] = {&ax_maxrange, &ay_maxrange, &az_maxrange};
+  for (int i = 0; i < 3; i++) {
+    *maxRange[i] = max(*maxAccel1[i], *maxAccel2[i]) * sf;
+  }
+  ax_maxrange = (ax_maxrange / 16384.0) * 9.81;
+  ay_maxrange = (ay_maxrange / 16384.0) * 9.81;
+  az_maxrange = (abs(az_maxrange) / 16384.0) * 9.81;
+
+  gx_bias2 /= 100;
+  gy_bias2 /= 100;
+  gz_bias2 /= 100;
+  ax_bias2 /= 100;
+  ay_bias2 /= 100;
+  az_bias2 /= 100;
+
+  // Adjust the bias from the acceleration in the z-axis
+  az_bias2 = abs(az_bias2 - 16384.0);
 
   Serial.println("Calibration done");
 
@@ -108,13 +168,13 @@ void loop() {
 
   if (rslt1 == 0 && rslt2 == 0) {
     // --- CONVERT ACCEL (m/s²) ---
-    ax1 = (d1[3] / 16384.0) * 9.81;
-    ay1 = (d1[4] / 16384.0) * 9.81;
-    az1 = (d1[5] / 16384.0) * 9.81;
+    ax1 = ((d1[3] - ax_bias1) / 16384.0) * 9.81;
+    ay1 = ((d1[4] - ay_bias1) / 16384.0) * 9.81;
+    az1 = ((d1[5] - az_bias1) / 16384.0) * 9.81;
 
-    ax2 = (d2[3] / 16384.0) * 9.81;
-    ay2 = (d2[4] / 16384.0) * 9.81;
-    az2 = (d2[5] / 16384.0) * 9.81;
+    ax2 = ((d2[3] - ax_bias2) / 16384.0) * 9.81;
+    ay2 = ((d2[4] - ay_bias2) / 16384.0) * 9.81;
+    az2 = ((d2[5] - az_bias2) / 16384.0) * 9.81;
 
     // --- CONVERT GYRO (rad/s) ---
     gx1 = (d1[0] - gx_bias1) * PI / 180.0;
@@ -152,12 +212,10 @@ void loop() {
     float az_lin = az - gz_comp;
 
     // --- SIMPLE NOISE THRESHOLD (helps drift a bit) ---
-    float threshold = 0.1;
-
-    if (abs(ax_lin) < threshold) ax_lin = 0;
-    if (abs(ay_lin) < threshold) ay_lin = 0;
-    if (abs(az_lin) < threshold) az_lin = 0;
-
+    if (abs(ax_lin) < ax_maxrange) ax_lin = 0;
+    if (abs(ay_lin) < ay_maxrange) ay_lin = 0;
+    if (abs(az_lin) < az_maxrange) az_lin = 0;
+    
     // --- INTEGRATE TO VELOCITY ---
     vx += ax_lin * dt;
     vy += ay_lin * dt;
