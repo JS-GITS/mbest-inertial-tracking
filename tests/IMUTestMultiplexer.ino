@@ -19,7 +19,6 @@ float pitch, roll, yaw;
 unsigned long lastTime;
 float accumulatedTime = 0;
 float ax_accumulated = 0, ay_accumulated = 0, az_accumulated = 0; 
-float dt = 0.01;  // Time interval in seconds (10 ms)
 // add biessies
 float gx_bias1 = 0, gy_bias1 = 0, gz_bias1 = 0;
 float gx_bias2 = 0, gy_bias2 = 0, gz_bias2 = 0;
@@ -29,7 +28,7 @@ float vx = 0, vy = 0, vz = 0;
 float px = 0, py = 0, pz = 0;
 
 // Initialize the values to discern values that have no movement
-float sf = 0.1;
+float sf = 0.15;
 float ax_max1 = 0, ay_max1 = 0, az_max1 = 0;
 float ax_max2 = 0, ay_max2 = 0, az_max2 = 0;
 float ax_maxrange = 0, ay_maxrange = 0, az_maxrange = 0;
@@ -70,31 +69,44 @@ void setup() {
     int16_t d[6];
     tcaSelect(0);
     imu1.getAccelGyroData(d);
-    // Record the max and minimum range of the accel data
-    for (int j = 0; j < 2; j++) {
-      if (abs(d[j + 3]) > *maxAccel1[j]) {
-        *maxAccel1[j] = abs(d[j + 3]);
-      }
-    }
-    float az_dev = abs(d[5] - 16384.0);
-    if (az_dev > az_max1) az_max1 = az_dev;
-
     // Add on the biases for the gyro and accel data
     gx_bias1 += d[0];
     gy_bias1 += d[1];
     gz_bias1 += d[2];
+
     ax_bias1 += d[3];
     ay_bias1 += d[4];
     az_bias1 += d[5];
     delay(5);
   }
 
-  gx_bias1 /= 100;
-  gy_bias1 /= 100;
-  gz_bias1 /= 100;
-  ax_bias1 /= 100;
-  ay_bias1 /= 100;
-  az_bias1 = az_bias1 / 100.0 - 16384.0;
+    gx_bias1 /= 100;
+    gy_bias1 /= 100;
+    gz_bias1 /= 100;
+    ax_bias1 /= 100;
+    ay_bias1 /= 100;
+    az_bias1 = az_bias1 / 100.0 - 16384.0;
+
+    // Find the max deviation
+    ax_max1 = 0;
+    ay_max1 = 0;
+    az_max1 = 0;
+
+  for (int i = 0; i < 100; i++) {
+    int16_t d[6];
+    tcaSelect(0);
+    imu1.getAccelGyroData(d);
+
+    float ax_dev = abs(d[3] - ax_bias1);
+    float ay_dev = abs(d[4] - ay_bias1);
+    float az_dev = abs(d[5] - (az_bias1 + 16384.0));
+
+    if (ax_dev > ax_max1) ax_max1 = ax_dev;
+    if (ay_dev > ay_max1) ay_max1 = ay_dev;
+    if (az_dev > az_max1) az_max1 = az_dev;
+
+    delay(5);
+  }
 
   Serial.println("Test");
   // --- CALIBRATE IMU 2 ---
@@ -102,42 +114,50 @@ void setup() {
     int16_t d[6];
     tcaSelect(1);
     imu2.getAccelGyroData(d);
-    for (int j = 0; j < 2; j++) {
-      if (abs(d[j + 3]) > *maxAccel2[j]) {
-        *maxAccel2[j] = abs(d[j + 3]);
-      }
-    }
-    float az_dev = abs(d[5] - 16384.0);
-    if (az_dev > az_max2) az_max2 = az_dev;
 
     gx_bias2 += d[0];
     gy_bias2 += d[1];
     gz_bias2 += d[2];
+
     ax_bias2 += d[3];
     ay_bias2 += d[4];
     az_bias2 += d[5];
     delay(5);
   }
 
-  // Find the max range
-  float* maxRange[] = {&ax_maxrange, &ay_maxrange, &az_maxrange};
-  for (int i = 0; i < 3; i++) {
-    *maxRange[i] = max(*maxAccel1[i], *maxAccel2[i]) * sf;
-  }
-  ax_maxrange = (ax_maxrange / 16384.0) * 9.81;
-  ay_maxrange = (ay_maxrange / 16384.0) * 9.81;
-  az_maxrange = (abs(az_maxrange) / 16384.0) * 9.81;
+  gx_bias2 /= 100.0;
+  gy_bias2 /= 100.0;
+  gz_bias2 /= 100.0;
 
-  gx_bias2 /= 100;
-  gy_bias2 /= 100;
-  gz_bias2 /= 100;
-  ax_bias2 /= 100;
-  ay_bias2 /= 100;
+  ax_bias2 /= 100.0;
+  ay_bias2 /= 100.0;
   az_bias2 = az_bias2 / 100.0 - 16384.0;
 
-  Serial.println("Calibration done");
+  ax_max2 = 0;
+  ay_max2 = 0;
+  az_max2 = 0;
+  for (int i = 0; i < 100; i++) {
+    int16_t d[6];
+    tcaSelect(1);
+    imu2.getAccelGyroData(d);
 
-  lastTime = millis();
+    float ax_dev = abs(d[3] - ax_bias2);
+    float ay_dev = abs(d[4] - ay_bias2);
+    float az_dev = abs(d[5] - (az_bias2 + 16384.0));
+
+    if (ax_dev > ax_max2) ax_max2 = ax_dev;
+    if (ay_dev > ay_max2) ay_max2 = ay_dev;
+    if (az_dev > az_max2) az_max2 = az_dev;
+
+    delay(5);
+    }
+
+  // Convert max range reading
+  ax_maxrange = (max(ax_max1, ax_max2) / 16384.0) * 9.81 * sf;
+  ay_maxrange = (max(ay_max1, ay_max2) / 16384.0) * 9.81 * sf;
+  az_maxrange = (max(az_max1, az_max2) / 16384.0) * 9.81 * sf;
+
+  Serial.println("Calibration done");
 
   // Serial.println("Bias calculated");
   // Serial.print("gx_bias: ");
@@ -146,15 +166,13 @@ void setup() {
   // Serial.print(gy_bias);
   // Serial.print(" gz_bias: ");
   // Serial.println(gz_bias);
-
   lastTime = millis();
-
-}
+  }
 
 void loop() {
   while (accumulatedTime <= timeBlock) {
     unsigned long currentTime = millis();
-    dt = (currentTime - lastTime) / 1000.0;  // Update dt
+    float dt = (currentTime - lastTime) / 1000.0;  // Update dt
     lastTime = currentTime;
     accumulatedTime += dt;
 
