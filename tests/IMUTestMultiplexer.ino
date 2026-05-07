@@ -133,7 +133,7 @@ void setup() {
   gz_bias2 /= 100;
   ax_bias2 /= 100;
   ay_bias2 /= 100;
-  az_bias2 = abs(az_bias2 - 16384.0);
+  az_bias2 = az_bias2 / 100.0 - 16384.0;
 
   Serial.println("Calibration done");
 
@@ -157,7 +157,6 @@ void loop() {
     dt = (currentTime - lastTime) / 1000.0;  // Update dt
     lastTime = currentTime;
     accumulatedTime += dt;
-    counter++;
 
     int16_t d1[6], d2[6];
 
@@ -170,6 +169,7 @@ void loop() {
     int rslt2 = imu2.getAccelGyroData(d2);
 
     if (rslt1 == 0 && rslt2 == 0) {
+      counter++;
       // --- CONVERT ACCEL (m/s²) ---
       ax1 = ((d1[3] - ax_bias1) / 16384.0) * 9.81;
       ay1 = ((d1[4] - ay_bias1) / 16384.0) * 9.81;
@@ -225,16 +225,16 @@ void loop() {
       ay_lin_old = ay_lin;
       az_lin_old = az_lin;
 
-      // Add on the accelerations to the accumulated variable
-      ax_accumulated = ax_accumulated + ax_lin;
-      ay_accumulated = ay_accumulated + ay_lin;
-      az_accumulated = az_accumulated + az_lin;
-
       // --- SIMPLE NOISE THRESHOLD (helps drift a bit) ---
       if (abs(ax_lin) < ax_maxrange) ax_lin = 0;
       if (abs(ay_lin) < ay_maxrange) ay_lin = 0;
       if (abs(az_lin) < az_maxrange) az_lin = 0;
       
+      // Add on the accelerations to the accumulated variable
+      ax_accumulated += ax_lin;
+      ay_accumulated += ay_lin;
+      az_accumulated += az_lin;
+
       // --- INTEGRATE TO VELOCITY ---
       vx += ax_lin * dt;
       vy += ay_lin * dt;
