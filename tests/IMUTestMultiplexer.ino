@@ -13,12 +13,14 @@ const int8_t TCAADDR = 0x70;
 // Variables for orientation calculations
 float ax1, ay1, az1, gx1, gy1, gz1;
 float ax2, ay2, az2, gx2, gy2, gz2;
+float ax, ay, az;
 float ax_lin, ay_lin, az_lin;
 float ax_lin_old = 0, ay_lin_old = 0, az_lin_old = 0;
 float pitch, roll, yaw;
 unsigned long lastTime;
 float accumulatedTime = 0;
-float ax_accumulated = 0, ay_accumulated = 0, az_accumulated = 0; 
+float vx_accumulated = 0, vy_accumulated = 0, vz_accumulated = 0;
+float vx_avg = 0, vy_avg = 0, vz_avg = 0;
 // add biessies
 float gx_bias1 = 0, gy_bias1 = 0, gz_bias1 = 0;
 float gx_bias2 = 0, gy_bias2 = 0, gz_bias2 = 0;
@@ -26,9 +28,8 @@ float ax_bias1 = 0, ay_bias1 = 0, az_bias1 = 0;
 float ax_bias2 = 0, ay_bias2 = 0, az_bias2 = 0;
 float vx = 0, vy = 0, vz = 0;
 float px = 0, py = 0, pz = 0;
-
 // Initialize the values to discern values that have no movement
-float sf = 0.15;
+float sf = 0.3;
 float ax_max1 = 0, ay_max1 = 0, az_max1 = 0;
 float ax_max2 = 0, ay_max2 = 0, az_max2 = 0;
 float ax_maxrange = 0, ay_maxrange = 0, az_maxrange = 0;
@@ -36,6 +37,7 @@ float* maxAccel1[] = {&ax_max1, &ay_max1, &az_max1};
 float* maxAccel2[] = {&ax_max2, &ay_max2, &az_max2};
 int timeBlock = 1;
 int counter = 0;
+float lsb_rate = 16384.0;
 
 // Low pass filter coefficient
 float lpf = 0.85;
@@ -85,7 +87,7 @@ void setup() {
     gz_bias1 /= 100;
     ax_bias1 /= 100;
     ay_bias1 /= 100;
-    az_bias1 = az_bias1 / 100.0 - 16384.0;
+    az_bias1 = az_bias1 / 100.0 - lsb_rate;
 
     // Find the max deviation
     ax_max1 = 0;
@@ -99,7 +101,7 @@ void setup() {
 
     float ax_dev = abs(d[3] - ax_bias1);
     float ay_dev = abs(d[4] - ay_bias1);
-    float az_dev = abs(d[5] - (az_bias1 + 16384.0));
+    float az_dev = abs(d[5] - (az_bias1 + lsb_rate));
 
     if (ax_dev > ax_max1) ax_max1 = ax_dev;
     if (ay_dev > ay_max1) ay_max1 = ay_dev;
@@ -131,7 +133,7 @@ void setup() {
 
   ax_bias2 /= 100.0;
   ay_bias2 /= 100.0;
-  az_bias2 = az_bias2 / 100.0 - 16384.0;
+  az_bias2 = az_bias2 / 100.0 - lsb_rate;
 
   ax_max2 = 0;
   ay_max2 = 0;
@@ -143,7 +145,7 @@ void setup() {
 
     float ax_dev = abs(d[3] - ax_bias2);
     float ay_dev = abs(d[4] - ay_bias2);
-    float az_dev = abs(d[5] - (az_bias2 + 16384.0));
+    float az_dev = abs(d[5] - (az_bias2 + lsb_rate));
 
     if (ax_dev > ax_max2) ax_max2 = ax_dev;
     if (ay_dev > ay_max2) ay_max2 = ay_dev;
@@ -153,9 +155,9 @@ void setup() {
     }
 
   // Convert max range reading
-  ax_maxrange = (max(ax_max1, ax_max2) / 16384.0) * 9.81 * sf;
-  ay_maxrange = (max(ay_max1, ay_max2) / 16384.0) * 9.81 * sf;
-  az_maxrange = (max(az_max1, az_max2) / 16384.0) * 9.81 * sf;
+  ax_maxrange = (max(ax_max1, ax_max2) / lsb_rate) * 9.81 * sf;
+  ay_maxrange = (max(ay_max1, ay_max2) / lsb_rate) * 9.81 * sf;
+  az_maxrange = (max(az_max1, az_max2) / lsb_rate) * 9.81 * sf;
 
   Serial.println("Calibration done");
 
@@ -189,22 +191,24 @@ void loop() {
     if (rslt1 == 0 && rslt2 == 0) {
       counter++;
       // --- CONVERT ACCEL (m/s²) ---
-      ax1 = ((d1[3] - ax_bias1) / 16384.0) * 9.81;
-      ay1 = ((d1[4] - ay_bias1) / 16384.0) * 9.81;
-      az1 = ((d1[5] - az_bias1) / 16384.0) * 9.81;
+      ax1 = ((d1[3] - ax_bias1) / lsb_rate) * 9.81;
+      ay1 = ((d1[4] - ay_bias1) / lsb_rate) * 9.81;
+      az1 = ((d1[5] - az_bias1) / lsb_rate) * 9.81;
 
-      ax2 = ((d2[3] - ax_bias2) / 16384.0) * 9.81;
-      ay2 = ((d2[4] - ay_bias2) / 16384.0) * 9.81;
-      az2 = ((d2[5] - az_bias2) / 16384.0) * 9.81;
+      ax2 = ((d2[3] - ax_bias2) / lsb_rate) * 9.81;
+      ay2 = ((d2[4] - ay_bias2) / lsb_rate) * 9.81;
+      az2 = ((d2[5] - az_bias2) / lsb_rate) * 9.81;
 
       // --- CONVERT GYRO (rad/s) ---
-      gx1 = (d1[0] - gx_bias1) * PI / 180.0;
-      gy1 = (d1[1] - gy_bias1) * PI / 180.0;
-      gz1 = (d1[2] - gz_bias1) * PI / 180.0;
+      float gyro_lsb = 16.4;   // LSB per deg/s for ±2000 dps
 
-      gx2 = (d2[0] - gx_bias2) * PI / 180.0;
-      gy2 = (d2[1] - gy_bias2) * PI / 180.0;
-      gz2 = (d2[2] - gz_bias2) * PI / 180.0;
+      gx1 = ((d1[0] - gx_bias1) / gyro_lsb) * PI / 180.0;
+      gy1 = ((d1[1] - gy_bias1) / gyro_lsb) * PI / 180.0;
+      gz1 = ((d1[2] - gz_bias1) / gyro_lsb) * PI / 180.0;
+
+      gx2 = ((d2[0] - gx_bias2) / gyro_lsb) * PI / 180.0;
+      gy2 = ((d2[1] - gy_bias2) / gyro_lsb) * PI / 180.0;
+      gz2 = ((d2[2] - gz_bias2) / gyro_lsb) * PI / 180.0;
 
       // FUSION of IMUs
 
@@ -218,27 +222,28 @@ void loop() {
 
       // Calculate pitch and roll from accelerometer data
       // atan2() is a trigonometric function that calculates the angle between ay and az
-      pitch = atan2(ay, az);                       // in radians (easier to calculate later with sin())
-      roll = atan2(-ax, sqrt(ay * ay + az * az));  // still in radians
+      // roll  = atan2(ay, az);
+      // pitch = atan2(-ax, sqrt(ay * ay + az * az));
 
-      // Integrate gyroscope data to get yaw
+      // // Integrate gyroscope data to get yaw
       yaw += gz_fused * dt;
-      // --- REMOVE GRAVITY (using pitch & roll) ---
-      float gx_comp = -9.81 * sin(pitch);
-      float gy_comp = 9.81 * sin(roll) * cos(pitch);
-      float gz_comp = 9.81 * cos(roll) * cos(pitch);
+
+      // // --- REMOVE GRAVITY (using pitch & roll) ---
+      // float ax_gravity = -9.81 * sin(pitch);
+      // float ay_gravity =  9.81 * sin(roll) * cos(pitch);
+      // float az_gravity =  9.81 * cos(roll) * cos(pitch);
 
       // Calculate the lienar components of the accelearations
-      ax_lin = ax - gx_comp;
-      ay_lin = ay - gy_comp;
-      az_lin = az - gz_comp;
+      ax_lin = ax;
+      ay_lin = ay;
+      az_lin = az - 9.81;
 
       // Apply low passing filter to the accelerations
-      // ax_lin = lpf*ax_lin_old + (1-lpf)*ax_lin;
-      // ay_lin = lpf*ay_lin_old + (1-lpf)*ay_lin;
-      // az_lin = lpf*az_lin_old + (1-lpf)*az_lin;
-      
-      // Substitute the old accelerations to the new ones
+      ax_lin = lpf*ax_lin_old + (1-lpf)*ax_lin;
+      ay_lin = lpf*ay_lin_old + (1-lpf)*ay_lin;
+      az_lin = lpf*az_lin_old + (1-lpf)*az_lin;
+
+      // Update old filtered values
       ax_lin_old = ax_lin;
       ay_lin_old = ay_lin;
       az_lin_old = az_lin;
@@ -247,28 +252,32 @@ void loop() {
       if (abs(ax_lin) < ax_maxrange) ax_lin = 0;
       if (abs(ay_lin) < ay_maxrange) ay_lin = 0;
       if (abs(az_lin) < az_maxrange) az_lin = 0;
-      
-      // Add on the accelerations to the accumulated variable
-      ax_accumulated += ax_lin;
-      ay_accumulated += ay_lin;
-      az_accumulated += az_lin;
 
-      // --- INTEGRATE TO VELOCITY ---
+      float vx_old = vx;
+      float vy_old = vy;
+      float vz_old = vz;
+
+      // integrate acceleration into velocity
       vx += ax_lin * dt;
       vy += ay_lin * dt;
       vz += az_lin * dt;
 
-      // --- ZERO VELOCITY UPDATE (if nearly stationary) ---
+      // zero velocity update if stationary
       if (ax_lin == 0 && ay_lin == 0 && az_lin == 0) {
-        vx *= 0.9;
-        vy *= 0.9;
-        vz *= 0.9;
+        vx = 0;
+        vy = 0;
+        vz = 0;
       }
 
-      // --- INTEGRATE TO POSITION ---
-      px += vx * dt;
-      py += vy * dt;
-      pz += vz * dt;
+      // integrate velocity into position using average velocity
+      px += 0.5 * (vx_old + vx) * dt;
+      py += 0.5 * (vy_old + vy) * dt;
+      pz += 0.5 * (vz_old + vz) * dt;
+
+      // Integrate Position 
+      // px += vx * dt;
+      // py += vy * dt;
+      // pz += vz * dt;
 
       // --- OUTPUT POSITION ---
       // Serial.print("px "); Serial.print(px); Serial.print(",");
@@ -302,24 +311,11 @@ void loop() {
       delay(10);
     }
   }
-  if (counter > 0) {
-    ax_lin = ax_accumulated / counter;
-    ay_lin = ay_accumulated / counter;
-    az_lin = az_accumulated / counter;
-
-    Serial.print("ax ");
-    Serial.print(ax_lin);
-    Serial.print(",");
-    Serial.print("ay ");
-    Serial.print(ay_lin);
-    Serial.print(",");
-    Serial.print("az ");
-    Serial.println(az_lin);
-  }
-
-  ax_accumulated = 0;
-  ay_accumulated = 0;
-  az_accumulated = 0;
+  Serial.print(px);
+  Serial.print("\t");
+  Serial.print(py);
+  Serial.print("\t");
+  Serial.println(pz);
   accumulatedTime = 0;
   counter = 0;
 }
